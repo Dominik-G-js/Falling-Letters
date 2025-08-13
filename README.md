@@ -26,5 +26,5 @@ Typing Falling Letters
   ----------------
   - Keep canvas resolution constant for deterministic physics. For hi-dpi support consider rendering to an offscreen buffer and scaling.
   - To integrate in a build pipeline: extract JS to a module file, use bundler (Webpack/Rollup) and minify for production. Keep source maps for debugging.
-  - Accessibility: add focus management and keyboard hints. Consider on-screen touch controls for mobile.
+
 
