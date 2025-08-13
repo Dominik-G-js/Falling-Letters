@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Typing Falling Letters — Part B</title>
+  <style>
+    :root{--bg:#0f1724;--panel:#0b1220;--accent:#06b6d4;--gold:#fbbf24;--muted:#9aa4b2;}
+    html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif;background:linear-gradient(180deg,#071029 0%, #071827 100%);color:#e6eef8}
+    .wrap{display:flex;align-items:center;justify-content:center;height:100%;padding:20px;box-sizing:border-box}
+    .card{width:900px;max-width:100%;background:rgba(8,14,22,0.6);border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,0.6);}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h1{font-size:18px;margin:0}
+    .meta{color:var(--muted);font-size:13px}
+    #gameContainer{position:relative;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.02));border-radius:8px;overflow:hidden}
+    canvas{display:block;width:100%;height:500px;background:transparent}
+    .controls{display:flex;gap:10px;align-items:center;margin-top:12px}
+    button{background:var(--accent);border:none;padding:8px 12px;border-radius:8px;color:#042a34;font-weight:600;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);font-weight:600}
+    .hud{position:absolute;left:8px;top:8px;padding:8px 10px;background:rgba(3,6,10,0.45);border-radius:8px;font-size:14px}
+    .hud .big{font-weight:700;font-size:20px}
+    .overlay{position:absolute;inset:0;background:linear-gradient(180deg,rgba(2,6,12,0.6),rgba(0,0,0,0.7));display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;box-sizing:border-box}
+    .resultBox{background:var(--panel);padding:18px;border-radius:10px;min-width:320px;text-align:center}
+    .resultBox h2{margin:0 0 8px 0}
+    .resultBox p{margin:6px 0;color:var(--muted)}
+    .formula{background:rgba(255,255,255,0.02);margin-top:10px;padding:8px;border-radius:8px;font-family:monospace}
+    footer{margin-top:12px;color:var(--muted);font-size:13px}
+    @media (max-width:600px){canvas{height:360px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <div>
+          <h1>Typing Falling Letters — Part B</h1>
+          <div class="meta">Simple Canvas game — ES6 | 20s sessions | No deps</div>
+        </div>
+        <div class="meta">Author: <strong>—</strong> • Date: <strong><!-- fill manually --></strong></div>
+      </header>
+
+      <div id="gameContainer">
+        <canvas id="gameCanvas" width="820" height="500"></canvas>
+        <div class="hud" id="hud">
+          <div>Time: <span id="timeLeft" class="big">20.0s</span></div>
+          <div>Score: <span id="score" class="big">0</span></div>
+        </div>
+
+        <div id="overlay" class="overlay" style="display:flex;">
+          <div style="text-align:center">
+            <h2 style="margin:0 0 8px 0">Ready to play?</h2>
+            <p style="color:var(--muted);margin:0 0 12px 0">Press Start to begin a 20-second typing session. Type falling letters to catch them.</p>
+            <div style="display:flex;gap:8px;justify-content:center">
+              <button id="startBtn">Start</button>
+              <button id="helpBtn" class="secondary">How to play</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div style="font-size:13px;color:var(--muted)">Normal letter: <strong>10 pts</strong> • Golden letter: <strong>20 pts</strong> (rarer)</div>
+        <div style="flex:1"></div>
+        <button id="resetBtn" class="secondary">Reset Score</button>
+        <button id="downloadBtn" class="secondary">Download Results</button>
+      </div>
+
+      <footer>
+        <div>Implementation: Canvas API, requestAnimationFrame, ES6. Minimal and production-friendly.</div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+
+  const SESSION_SECONDS = 20;
+  const NORMAL_POINTS = 10;
+  const GOLD_POINTS = NORMAL_POINTS * 2;
+  const GOLD_CHANCE = 0.12; 
+  const SPAWN_INTERVAL = 420; 
+  const GRAVITY = 60; 
+  const LETTER_MIN_SPEED = 60; 
+  const LETTER_MAX_SPEED = 180;
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  let width = canvas.width;
+  let height = canvas.height;
+
+  const timeLeftEl = document.getElementById('timeLeft');
+  const scoreEl = document.getElementById('score');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const helpBtn = document.getElementById('helpBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  let running = false;
+  let timeLeft = SESSION_SECONDS;
+  let lastTime = 0;
+  let spawnTimer = 0;
+  let score = 0;
+  let normalCount = 0;
+  let goldenCount = 0;
+  let letters = [];
+  let animationFrameId = null;
+
+  class Letter {
+    constructor(char, x, isGolden=false){
+      this.char = char;
+      this.x = x;
+      this.y = -30;
+      this.size = isGolden ? 42 : 36;
+      this.isGolden = isGolden;
+      this.speed = lerp(LETTER_MIN_SPEED, LETTER_MAX_SPEED, Math.random());
+      this.rotation = (Math.random() - 0.5) * 0.4;
+      this.collected = false;
+      this.id = Math.random().toString(36).slice(2,9);
+    }
+    update(dt){
+      this.y += this.speed * dt + 0.5 * GRAVITY * dt * dt;
+      this.rotation += (Math.random()-0.5)*0.02;
+    }
+    draw(ctx){
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.rotation);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${this.size}px system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
+      if(this.isGolden){
+        ctx.fillStyle = '#f6e58d';
+        ctx.shadowColor = '#f5c55a';
+        ctx.shadowBlur = 18;
+        ctx.fillText(this.char, 0, 0);
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.fillStyle = '#e6eef8';
+        ctx.fillText(this.char, 0, 0);
+      }
+      ctx.restore();
+    }
+    outOfScreen(){
+      return this.y - this.size > height + 40;
+    }
+  }
+
+  function lerp(a,b,t){return a+(b-a)*t}
+  function randInt(min,max){return Math.floor(Math.random()*(max-min+1))+min}
+
+  function spawnLetter(){
+    const char = String.fromCharCode(65 + randInt(0,25)); // A-Z
+    const isGolden = Math.random() < GOLD_CHANCE;
+    const x = 30 + Math.random()*(width-60);
+    const letter = new Letter(char, x, isGolden);
+    letters.push(letter);
+  }
+
+  function startGame(){
+    if(running) return;
+    resetSessionState();
+    running = true;
+    overlay.style.display = 'none';
+    lastTime = performance.now();
+    spawnTimer = 0;
+    animationFrameId = requestAnimationFrame(loop);
+    window.focus();
+  }
+
+  function endGame(){
+    running = false;
+    cancelAnimationFrame(animationFrameId);
+    showResultScreen();
+  }
+
+  function resetSessionState(){
+    timeLeft = SESSION_SECONDS;
+    score = 0;
+    normalCount = 0;
+    goldenCount = 0;
+    letters = [];
+    updateHUD();
+  }
+
+  function updateHUD(){
+    timeLeftEl.textContent = `${timeLeft.toFixed(1)}s`;
+    scoreEl.textContent = `${score}`;
+  }
+
+  function loop(now){
+    const dt = Math.min((now - lastTime)/1000, 0.05); // clamp dt
+    lastTime = now;
+
+    if(running){
+      timeLeft -= dt;
+      if(timeLeft <= 0){
+        timeLeft = 0;
+      }
+
+      spawnTimer += (dt*1000);
+      if(spawnTimer >= SPAWN_INTERVAL){
+        spawnTimer = 0;
+        spawnLetter();
+      }
+
+      for(let i=letters.length-1;i>=0;i--){
+        const l = letters[i];
+        l.update(dt);
+        if(l.outOfScreen()){
+          letters.splice(i,1);
+        }
+      }
+
+      if(timeLeft <= 0){
+        endGame();
+      }
+
+      draw();
+      updateHUD();
+      animationFrameId = requestAnimationFrame(loop);
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,width,height);
+    drawBackground(ctx);
+    letters.sort((a,b)=>a.y-b.y);
+    for(const l of letters){
+      l.draw(ctx);
+    }
+  }
+
+  function drawBackground(ctx){
+    for(let i=0;i<10;i++){
+    }
+  }
+  window.addEventListener('keydown', (ev)=>{
+    if(!running) return;
+    const key = ev.key;
+    if(key.length === 1){
+      const char = key.toUpperCase();
+      let targetIndex = -1;
+      let maxY = -Infinity;
+      for(let i=0;i<letters.length;i++){
+        if(letters[i].char === char){
+          if(letters[i].y > maxY){ maxY = letters[i].y; targetIndex = i; }
+        }
+      }
+      if(targetIndex !== -1){
+        const l = letters.splice(targetIndex,1)[0];
+        if(l.isGolden){ score += GOLD_POINTS; goldenCount++; }
+        else { score += NORMAL_POINTS; normalCount++; }
+        updateHUD();
+      }
+    }
+  });
+  startBtn.addEventListener('click', startGame);
+  helpBtn.addEventListener('click', ()=>{
+    alert('Type the falling letters on your keyboard. Golden letters are rarer and worth double points. Game lasts 20 seconds.');
+  });
+  resetBtn.addEventListener('click', ()=>{
+    if(running) return alert('Stop the running session first.');
+    score = 0; normalCount = 0; goldenCount = 0; updateHUD();
+    overlay.style.display = 'flex';
+  });
+
+  downloadBtn.addEventListener('click', ()=>{
+    const data = {
+      score, normalCount, goldenCount, sessionSeconds: SESSION_SECONDS, date: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `typing-results-${Date.now()}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  function showResultScreen(){
+    overlay.style.display = 'flex';
+    overlay.innerHTML = '';
+
+    const box = document.createElement('div');
+    box.className = 'resultBox';
+
+    const h2 = document.createElement('h2');
+    h2.textContent = 'Session complete';
+    box.appendChild(h2);
+
+    const p1 = document.createElement('p');
+    p1.innerHTML = `Total score: <strong>${score}</strong>`;
+    box.appendChild(p1);
+
+    const p2 = document.createElement('p');
+    p2.textContent = `Normal letters collected: ${normalCount} (x ${NORMAL_POINTS} pts)`;
+    box.appendChild(p2);
+
+    const p3 = document.createElement('p');
+    p3.textContent = `Golden letters collected: ${goldenCount} (x ${GOLD_POINTS} pts)`;
+    box.appendChild(p3);
+
+    const formula = document.createElement('div');
+    formula.className = 'formula';
+    formula.textContent = `Total Points = (NormalCount × ${NORMAL_POINTS}) + (GoldenCount × ${GOLD_POINTS})`;
+    box.appendChild(formula);
+
+    const detail = document.createElement('p');
+    detail.style.color = 'var(--muted)';
+    detail.textContent = `Detailed: (${normalCount} × ${NORMAL_POINTS}) + (${goldenCount} × ${GOLD_POINTS}) = ${normalCount*NORMAL_POINTS} + ${goldenCount*GOLD_POINTS}`;
+    box.appendChild(detail);
+
+    const actions = document.createElement('div');
+    actions.style.marginTop = '10px';
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'center';
+    actions.style.gap = '8px';
+
+    const replay = document.createElement('button');
+    replay.textContent = 'Play again';
+    replay.addEventListener('click', ()=>{
+      overlay.innerHTML = '<div style="text-align:center"><h2 style="margin:0 0 8px 0">Ready to play?</h2><p style="color:var(--muted);margin:0 0 12px 0">Press Start to begin a 20-second typing session. Type falling letters to catch them.</p><div style="display:flex;gap:8px;justify-content:center"><button id="startBtn">Start</button><button id="helpBtn" class="secondary">How to play</button></div></div>';
+      document.getElementById('startBtn').addEventListener('click', startGame);
+      document.getElementById('helpBtn').addEventListener('click', ()=>alert('Type the falling letters. Golden letters worth double.'));
+    });
+    actions.appendChild(replay);
+
+    const close = document.createElement('button');
+    close.textContent = 'Close';
+    close.className = 'secondary';
+    close.addEventListener('click', ()=>{
+      overlay.style.display = 'none';
+      overlay.innerHTML = '<div style="text-align:center"><h2 style="margin:0 0 8px 0">Ready to play?</h2><p style="color:var(--muted);margin:0 0 12px 0">Press Start to begin a 20-second typing session. Type falling letters to catch them.</p><div style="display:flex;gap:8px;justify-content:center"><button id="startBtn">Start</button><button id="helpBtn" class="secondary">How to play</button></div></div>';
+      document.getElementById('startBtn').addEventListener('click', startGame);
+      document.getElementById('helpBtn').addEventListener('click', ()=>alert('Type the falling letters. Golden letters worth double.'));
+    });
+    actions.appendChild(close);
+
+    box.appendChild(actions);
+
+    overlay.appendChild(box);
+    updateHUD();
+  }
+
+  function resize(){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / canvas.width;
+    const scaleY = rect.height / canvas.height;
+    width = canvas.width;
+    height = canvas.height;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  draw();
+  </script>
+
+</body>
+</html>
