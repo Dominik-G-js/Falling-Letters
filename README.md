@@ -28,10 +28,3 @@ Typing Falling Letters
   - To integrate in a build pipeline: extract JS to a module file, use bundler (Webpack/Rollup) and minify for production. Keep source maps for debugging.
   - Accessibility: add focus management and keyboard hints. Consider on-screen touch controls for mobile.
 
-  Possible improvements
-  ---------------------
-  - Sound effects (catch, miss, golden) and haptics for mobile.
-  - Particle effects and pooling for better visuals.
-  - Difficulty scaling: increase spawn rate over time.
-  - High score saving (localStorage or server-side API).
-  - Unit tests for scoring logic.
